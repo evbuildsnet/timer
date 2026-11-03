@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A silent visual timer and stopwatch on one time axis.">
+  <meta name="theme-color" content="#0B0A09">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Timer">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <title>Timer</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0B0A09; overscroll-behavior: none; }
+  </style>
+</head>
+<body>
+  <script>
+    if ('serviceWorker' in navigator) {
+      // Register after load, then hand the worker everything this first visit already
+      // downloaded (renderer, wasm, fonts) so the very next launch works offline.
+      addEventListener('load', async () => {
+        try {
+          await navigator.serviceWorker.register('sw.js');
+          const worker = (await navigator.serviceWorker.ready).active;
+          const post = () => {
+            const urls = performance.getEntriesByType('resource').map((entry) => entry.name);
+            worker?.postMessage({ type: 'precache', urls: [location.origin + location.pathname.replace(/index\.html$/, ''), ...urls] });
+          };
+          post();
+          // The renderer and wasm may still be in flight at load; the first frame means they all landed.
+          addEventListener('flutter-first-frame', post, { once: true });
+        } catch (_) {}
+      });
+    }
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
