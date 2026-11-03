@@ -1,0 +1,11 @@
+:{$PORT:8080} {
+	root * /srv
+	encode zstd gzip
+
+	# Entry points must revalidate so a new build is picked up; everything else is versioned by the worker.
+	@entry path / /index.html /sw.js /flutter_bootstrap.js /manifest.json
+	header @entry Cache-Control "no-cache"
+
+	try_files {path} /index.html
+	file_server
+}
