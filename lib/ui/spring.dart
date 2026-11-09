@@ -9,8 +9,14 @@ final class Spring {
   double value;
   double target;
   double velocity = 0;
-  final double stiffness;
-  final double damping;
+  double stiffness;
+  double damping;
+
+  /// Changes how the spring feels without disturbing its motion.
+  void tune(double stiffness, double dampingRatio) {
+    this.stiffness = stiffness;
+    damping = 2 * dampingRatio * math.sqrt(stiffness);
+  }
 
   bool get settled => (value - target).abs() < 5e-4 && velocity.abs() < 5e-3;
 

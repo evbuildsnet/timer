@@ -13,12 +13,20 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../engine/readout.dart';
 import '../engine/session.dart';
 import '../engine/store.dart';
+import 'feed_scroll.dart';
 import 'geometry.dart';
 import 'scene.dart';
 import 'spring.dart';
 
-const _pxPerItem = 56.0;
 const _wheelPxPerItem = 48.0;
+
+/// Dial spring feels: following a slow finger (weighty), following a fast one
+/// (tight), a long fast glide, and the ordinary settle onto a value.
+typedef _Feel = ({double stiffness, double ratio});
+const _Feel _followTarget = (stiffness: 220, ratio: 0.9);
+const _Feel _followFast = (stiffness: 900, ratio: 1);
+const _Feel _glide = (stiffness: 70, ratio: 1);
+const _Feel _settle = (stiffness: 190, ratio: 0.84);
 const _slop = 9.0;
 const _resetDistance = 72.0;
 const _wheelResetDistance = 140.0;
@@ -58,7 +66,7 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
   bool _use24h = true;
 
   // Motion.
-  final dial = Spring(Session.defaultMinutes.toDouble(), stiffness: 190, dampingRatio: 0.84);
+  final dial = Spring(Session.defaultMinutes.toDouble(), stiffness: _settle.stiffness, dampingRatio: _settle.ratio);
   final day = Spring(0, stiffness: 70, dampingRatio: 1);
   final tide = Spring(0, stiffness: 42, dampingRatio: 0.62);
   final wave = Spring(1, stiffness: 30, dampingRatio: 1);
@@ -90,22 +98,30 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
   int? _pointer;
   Offset _downAt = Offset.zero;
   Offset _lastAt = Offset.zero;
-  Duration _lastMoveTime = Duration.zero;
-  double _speed = 0;
   bool _dragging = false;
   bool _caught = false;
-  VelocityTracker? _velocity;
+  FeedScroll? _feed;
+
+  /// Converts pointer timestamps to the [_ms] clock, so finger speed uses when
+  /// the finger actually moved rather than when the frame got to it.
+  double _eventClock = 0;
+  double _at(PointerEvent event) => event.timeStamp.inMicroseconds / 1000 + _eventClock;
+
+  /// How the feed's current motion feels: which crossings click.
+  ScrollMode _feel = ScrollMode.target;
 
   int get _now => DateTime.now().millisecondsSinceEpoch;
 
   /// Monotonic ms for input timing: immune to the wall clock stepping. Never 0.
   int get _mono => _clock.elapsedMilliseconds + 1;
 
+  /// Monotonic ms with sub-millisecond precision, for finger speed.
+  double get _ms => _clock.elapsedMicroseconds / 1000;
+
   int get _selected => dial.target.round().clamp(stopwatchValue, maxMinutes);
 
-  Readout _readout(Session s, int now) => s is Selecting
-      ? selectionReadout(s.value, now, use24h: _use24h)
-      : readoutOf(s, now, use24h: _use24h);
+  Readout _readout(Session s, int now) =>
+      s is Selecting ? selectionReadout(s.value, now, use24h: _use24h) : readoutOf(s, now, use24h: _use24h);
 
   @override
   void initState() {
@@ -215,6 +231,8 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     }
     _commit(Selecting(landing));
     dial.snap(landing.toDouble());
+    _feed = FeedScroll(landing.toDouble());
+    _feel = ScrollMode.target;
     _lastFeedInputAt = _mono;
     _lastClick = landing;
     enter
@@ -229,7 +247,14 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     if (session is Paused) _reset();
     if (session is! Selecting) return;
     _wake();
-    dial.target = (_selected + steps).clamp(stopwatchValue, maxMinutes).toDouble();
+    _settleDial((_selected + steps).clamp(stopwatchValue, maxMinutes).toDouble());
+  }
+
+  /// Lands the dial on [value] with the ordinary settle and a tick per number.
+  void _settleDial(double value) {
+    dial.tune(_settle.stiffness, _settle.ratio);
+    _feel = ScrollMode.target;
+    dial.target = value;
   }
 
   // ───────────────────────────── Frame loop
@@ -261,10 +286,7 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     final breathing = !_still && wave.value > 0.05;
     // When still, wake right after the session's next whole second so labels never lag.
     final phase = session.signedAt(_now) ?? _now;
-    _idle = Timer(
-      breathing ? const Duration(milliseconds: 50) : Duration(milliseconds: 1004 - phase % 1000),
-      _frame,
-    );
+    _idle = Timer(breathing ? const Duration(milliseconds: 50) : Duration(milliseconds: 1004 - phase % 1000), _frame);
   }
 
   /// Advances the world by [dt]. Returns true while anything is in motion.
@@ -276,10 +298,22 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     if (session is Selecting) {
       if (!_dialHeld && _lastWheelAt != 0 && _mono - _lastWheelAt > 140) {
         _lastWheelAt = 0;
-        dial.target = dial.value.round().clamp(stopwatchValue, maxMinutes).toDouble();
+        _settleDial(dial.value.round().clamp(stopwatchValue, maxMinutes).toDouble());
       }
       moving |= _lastWheelAt != 0;
-      if (!_dialHeld) moving |= _advance(dial, dt);
+      final feed = _feed;
+      if (_dialHeld && feed != null) {
+        // A finger on the feed: the dial follows it with weight.
+        if (feed.update(_ms) == ScrollMode.target) HapticFeedback.lightImpact();
+        _feel = feed.mode;
+        final feel = feed.mode == ScrollMode.fast ? _followFast : _followTarget;
+        dial
+          ..tune(feel.stiffness, feel.ratio)
+          ..target = feed.target;
+        moving |= _advance(dial, dt);
+      } else if (!_dialHeld) {
+        moving |= _advance(dial, dt);
+      }
       // Remember where the feed came to rest, so a reload lands on the same value.
       final landed = dial.target.round().clamp(stopwatchValue, maxMinutes);
       if (_pointer == null && !_dialHeld && _lastWheelAt == 0 && dial.settled && landed != session.value) {
@@ -287,7 +321,16 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
       }
       final clicked = dial.value.round().clamp(stopwatchValue, maxMinutes);
       if (clicked != _lastClick) {
-        if (_lastClick != -1) HapticFeedback.selectionClick();
+        if (_lastClick != -1) {
+          switch (FeedScroll.detent(_lastClick, clicked, _feel)) {
+            case Detent.checkpoint:
+              HapticFeedback.mediumImpact();
+            case Detent.number:
+              HapticFeedback.selectionClick();
+            case Detent.none:
+              break;
+          }
+        }
         _lastClick = clicked;
       }
     }
@@ -316,7 +359,8 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     _lastLabel = readout.label;
 
     // The feed is at rest once input has paused and the dial has landed on a value.
-    final atRest = current is! Selecting ||
+    final atRest =
+        current is! Selecting ||
         (!_dialHeld && _mono - _lastFeedInputAt > 120 && _lastWheelAt == 0 && (dial.value - dial.target).abs() < 0.02);
     if (!atRest) rest.snap(0);
     moving |= !atRest;
@@ -329,7 +373,11 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
       final position = dial.value.clamp(0.0, maxMinutes.toDouble());
       // Crossing toward `+` flips rooms in one animated move; a held drag never parks on grey.
       // Hysteresis keeps a resting, trembling finger near the boundary from strobing.
-      day.target = position < 0.4 ? 1 : position > 0.6 ? 0 : day.target;
+      day.target = position < 0.4
+          ? 1
+          : position > 0.6
+          ? 0
+          : day.target;
       // Preview the amount of time as water, kept below the label so the
       // glowing waterline never runs through text.
       final reach = g == null ? 0.3 : (g.size.height - g.labelBottom) / g.size.height;
@@ -444,7 +492,14 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     final sameShape = from.length == to.length;
     final changed = sameShape ? [for (var i = 0; i < to.length; i++) from[i] != to[i]] : null;
     scene.ghosts.add(
-      Ghost(text: from, fit: g.fit(from), body: body.value, direction: -counting, offset: nudge.value, changed: changed),
+      Ghost(
+        text: from,
+        fit: g.fit(from),
+        body: body.value,
+        direction: -counting,
+        offset: nudge.value,
+        changed: changed,
+      ),
     );
     scene
       ..hero = to
@@ -465,8 +520,6 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
 
   // ───────────────────────────── Input
 
-  double _gain() => 1 + 1.8 * ((_speed - 0.4) / 1.4).clamp(0.0, 1.0);
-
   void _onDown(PointerDownEvent event) {
     if (_pointer != null) return;
     if (event.kind == PointerDeviceKind.mouse && event.buttons != kPrimaryButton) return;
@@ -474,15 +527,15 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     focusNode.requestFocus();
     _pointer = event.pointer;
     _downAt = _lastAt = event.position;
-    _lastMoveTime = event.timeStamp;
-    _speed = 0;
     _dragging = false;
-    _velocity = VelocityTracker.withKind(event.kind)..addPosition(event.timeStamp, event.position);
+    _eventClock = _ms - event.timeStamp.inMicroseconds / 1000;
     // Touching a spinning feed stops it, like any iOS list. That touch never starts a timer.
     _caught = session is Selecting && (dial.velocity.abs() > 1.5 || (dial.target - dial.value).abs() > 0.3);
+    _feed = FeedScroll(dial.value);
     if (_caught) {
       // A caught feed is held: no label until the finger lifts and the dial lands.
       dial.snap(dial.value);
+      _feel = ScrollMode.target;
       _dialHeld = true;
     } else {
       press.target = 1;
@@ -491,12 +544,8 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
 
   void _onMove(PointerMoveEvent event) {
     if (event.pointer != _pointer) return;
-    _velocity?.addPosition(event.timeStamp, event.position);
     final dy = event.position.dy - _lastAt.dy;
-    final ms = math.max(1, (event.timeStamp - _lastMoveTime).inMicroseconds / 1000);
-    _speed += (dy.abs() / ms - _speed) * (1 - math.exp(-ms / 80));
     _lastAt = event.position;
-    _lastMoveTime = event.timeStamp;
 
     final total = event.position - _downAt;
     if (!_dragging) {
@@ -508,10 +557,7 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     switch (session) {
       case Selecting():
         _dialHeld = true;
-        var delta = dy / _pxPerItem * _gain();
-        final p = dial.value;
-        if (p < 0 || p > maxMinutes) delta *= 0.3;
-        dial.snap(p + delta);
+        _feed?.move(dy, _at(event));
         _lastFeedInputAt = _mono;
       case Paused():
         if (total.dy.abs() > _resetDistance) {
@@ -533,20 +579,23 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
 
     if (_dragging) {
       _dragging = false;
-      if (session is Selecting && _dialHeld) {
-        final pxPerSecond = _velocity?.getVelocity().pixelsPerSecond.dy ?? 0;
-        final itemsPerSecond = (pxPerSecond / _pxPerItem * _gain()).clamp(-90.0, 90.0);
-        final projected = dial.value + itemsPerSecond * 0.16;
+      final feed = _feed;
+      if (session is Selecting && _dialHeld && feed != null) {
+        final landing = feed.release(dial.value, _at(event));
+        // A fast release glides long and soft; a targeted one settles where it was aimed.
+        final feel = landing.mode == ScrollMode.fast ? _glide : _settle;
+        _feel = landing.mode;
         dial
-          ..velocity = itemsPerSecond
-          ..target = projected.round().clamp(stopwatchValue, maxMinutes).toDouble();
+          ..tune(feel.stiffness, feel.ratio)
+          ..velocity = landing.velocity
+          ..target = landing.target;
       }
       _dialHeld = false;
       return;
     }
     _dialHeld = false;
     if (_caught) {
-      dial.target = dial.value.round().clamp(stopwatchValue, maxMinutes).toDouble();
+      _settleDial(dial.value.round().clamp(stopwatchValue, maxMinutes).toDouble());
       return;
     }
     if (event is PointerCancelEvent) return;
@@ -561,7 +610,7 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
         if (a < 0.5 || a > 1.6 || item.alpha < 0.05) continue;
         final halfHeight = g.inkHeight((wdth: item.wdth, scale: item.scale)) / 2 + 24;
         if ((position.dy - item.center.dy).abs() < halfHeight) {
-          dial.target = item.value.toDouble();
+          _settleDial(item.value.toDouble());
           return;
         }
       }
@@ -586,6 +635,7 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
     }
     if (session is! Selecting) return;
     _lastFeedInputAt = _mono;
+    _feel = ScrollMode.target;
     final next = dial.value - dy / _wheelPxPerItem;
     dial.snap(next.clamp(stopwatchValue - 0.4, maxMinutes + 0.4));
     _lastWheelAt = _mono;
