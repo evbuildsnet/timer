@@ -389,6 +389,7 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
       ..dial = dial.value
       ..day = day.value
       ..tide = tide.value.clamp(0.0, 1.0)
+      ..still = _still
       ..wave = _still ? 0 : wave.value
       ..dim = dim.value
       ..spread = spread.value
@@ -399,9 +400,10 @@ class _StageState extends State<Stage> with SingleTickerProviderStateMixin, Widg
       ..captionAlpha = caption.value
       ..label = readout.label;
 
-    // Dark status-bar text whenever the backdrop is light: day, or the amber flood.
+    // Dark status-bar text whenever the backdrop is light: the day room, unless the
+    // red flood covers the top (it drains from the top down, or fades under Reduce Motion).
     final flood = scene.flood;
-    final dayUi = scene.day > 0.5 || (flood >= 0.93 && flood <= 1.5);
+    final dayUi = scene.day > 0.5 && !(flood >= 0.93 && flood <= (_still ? 1.5 : 1.12));
     final announced = current is Selecting
         ? selectionReadout(_selected, now, use24h: _use24h).announcement
         : readout.announcement;

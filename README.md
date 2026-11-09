@@ -1,8 +1,10 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# Timer
+# Übertime
 
-A silent visual timer with the stopwatch on the same time axis. Scroll to a number and tap to start. The tide drains as time runs out, and at zero the screen floods with light and keeps counting overtime. `+` (below 1) starts a plain stopwatch.
+Your time. Fully charged.
+
+A silent visual timer with the stopwatch on the same time axis, styled after a medic's ÜberCharge. Scroll to a number and tap to start. A blue charge drains as time runs out; at zero the screen flashes red, drains into a red charge, and keeps counting overtime. `+` (below 1) starts a plain stopwatch.
 
 One Flutter codebase for iOS and the web.
 

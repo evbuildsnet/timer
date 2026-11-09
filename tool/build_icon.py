@@ -45,16 +45,18 @@ wave = f"M0 {tide} C {size*0.25} {tide-22}, {size*0.5} {tide+20}, {size*0.75} {t
 
 svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" width="{size}" height="{size}">
 <defs>
-  <radialGradient id="pool" cx="50%" cy="42%" r="65%"><stop offset="0" stop-color="#1D1612"/><stop offset="1" stop-color="#0B0A09"/></radialGradient>
-  <linearGradient id="tide" x1="0" y1="{tide}" x2="0" y2="{size}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3C1B0B"/><stop offset="1" stop-color="#1A0905"/></linearGradient>
+  <radialGradient id="pool" cx="50%" cy="42%" r="65%"><stop offset="0" stop-color="#1D1A17"/><stop offset="1" stop-color="#0C0B0A"/></radialGradient>
+  <linearGradient id="tide" x1="0" y1="{tide}" x2="0" y2="{size}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#173A9C"/><stop offset="1" stop-color="#030A24"/></linearGradient>
   <clipPath id="under"><path d="{wave}"/></clipPath>
+  <linearGradient id="sheen" x1="0" y1="{size}" x2="{size}" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0.36" stop-color="#FFF" stop-opacity="0"/><stop offset="0.45" stop-color="#FFF" stop-opacity="0.30"/><stop offset="0.5" stop-color="#FFF" stop-opacity="0"/><stop offset="0.63" stop-color="#FFF" stop-opacity="0"/><stop offset="0.66" stop-color="#FFF" stop-opacity="0.20"/><stop offset="0.69" stop-color="#FFF" stop-opacity="0"/></linearGradient>
   <filter id="glow" x="-10%" y="-200%" width="120%" height="500%"><feGaussianBlur stdDeviation="9"/></filter>
 </defs>
 <rect width="{size}" height="{size}" fill="url(#pool)"/>
 <path d="{wave}" fill="url(#tide)"/>
-<g fill="#FFF1DB">{numerals}</g>
-<g fill="#FFB24C" clip-path="url(#under)">{numerals}</g>
-<path d="{wave.split(' V')[0]}" fill="none" stroke="#FFB04F" stroke-width="16" opacity="0.55" filter="url(#glow)"/>
-<path d="{wave.split(' V')[0]}" fill="none" stroke="#FFD08A" stroke-width="4"/>
+<g fill="#ECE3CC">{numerals}</g>
+<g fill="#CCE5FF" clip-path="url(#under)">{numerals}</g>
+<rect width="{size}" height="{size}" fill="url(#sheen)" clip-path="url(#under)"/>
+<path d="{wave.split(' V')[0]}" fill="none" stroke="#5FA8FF" stroke-width="16" opacity="0.6" filter="url(#glow)"/>
+<path d="{wave.split(' V')[0]}" fill="none" stroke="#CDE8FF" stroke-width="4"/>
 </svg>'''
 Path(sys.argv[1]).write_text(svg)

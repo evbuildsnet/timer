@@ -38,7 +38,7 @@ class TimerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return WidgetsApp(
-      title: 'Timer',
+      title: 'Übertime',
       color: const Color(0xFF0B0A09),
       debugShowCheckedModeBanner: false,
       builder: (context, _) => Stage(store: store, program: program),

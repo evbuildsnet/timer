@@ -45,6 +45,9 @@ final class Scene extends ChangeNotifier {
   double ripple = 0;
   double dim = 0;
 
+  /// Reduce Motion: the flood fades in place instead of rising and draining.
+  bool still = false;
+
   bool selecting = true;
   double dial = 25;
 
@@ -301,7 +304,8 @@ final class ScenePainter extends CustomPainter {
       ..setFloat(i++, mode)
       ..setFloat(i++, alpha)
       ..setFloat(i++, g.heroCenter.dx)
-      ..setFloat(i++, g.heroCenter.dy);
+      ..setFloat(i++, g.heroCenter.dy)
+      ..setFloat(i++, s.still ? 1 : 0);
     return shader;
   }
 

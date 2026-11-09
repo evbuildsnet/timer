@@ -1,7 +1,7 @@
 {
-  "name": "Timer",
-  "short_name": "Timer",
-  "description": "A silent visual timer and stopwatch on one time axis.",
+  "name": "Übertime",
+  "short_name": "Übertime",
+  "description": "Your time. Fully charged. A silent visual timer and stopwatch.",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0B0A09",
